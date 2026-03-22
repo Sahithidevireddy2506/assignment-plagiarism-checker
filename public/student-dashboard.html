@@ -117,6 +117,7 @@
       font-size: 14px;
     }
     .btn-submit { background: #2563eb; color: white; }
+    .btn-submit:disabled { background: #9ca3af; cursor: not-allowed; }
     .btn-cancel { background: #f3f4f6; color: #333; }
   </style>
 </head>
@@ -147,7 +148,7 @@
       </p>
       <div class="modal-buttons">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-        <button class="btn-submit" onclick="submitAssignment()">Submit</button>
+        <button class="btn-submit" id="submitBtn" onclick="submitAssignment()">Submit</button>
       </div>
     </div>
   </div>
@@ -163,7 +164,7 @@
     async function loadAssignments() {
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${BACKEND}/api/assignments/all`, {
+        const res = await fetch(BACKEND + '/api/assignments/all', {
           headers: { 'Authorization': token }
         });
         const assignments = await res.json();
@@ -190,44 +191,29 @@
         const submission = mySubmissions.find(s => s.assignment === a._id);
 
         let badgeHTML = '<span class="badge pending">Pending</span>';
-        let btnHTML = `<button class="submit-btn"
-          onclick="openModal('${a._id}', '${a.title}')">
-          Submit Assignment
-        </button>`;
+        let btnHTML = '<button class="submit-btn" onclick="openModal(\'' + a._id + '\', \'' + a.title.replace(/'/g, "\\'") + '\')">Submit Assignment</button>';
 
         if (submission) {
-          badgeHTML = `<span class="badge ${submission.status}">
-            ${submission.status === 'on-time' ? 'Submitted On Time' : 'Late'}
-          </span>`;
+          badgeHTML = '<span class="badge ' + submission.status + '">' +
+            (submission.status === 'on-time' ? 'Submitted On Time' : 'Late') + '</span>';
           btnHTML = '<button class="submit-btn" disabled>Already Submitted</button>';
-          if (submission.similarityScore > 0) {
+          if (submission.similarityScore >= 0) {
             const sc = submission.similarityScore > 50 ? 'color:#dc2626' : 'color:#16a34a';
-            btnHTML += `<p style="font-size:13px;margin-top:8px;${sc}">
-              Similarity: ${submission.similarityScore}%
-            </p>`;
+            btnHTML += '<p style="font-size:13px;margin-top:8px;' + sc + '">Similarity: ' + submission.similarityScore + '%</p>';
           }
           if (submission.aiFeedback) {
-            btnHTML += `<div style="margin-top:8px;padding:8px;
-              background:#f0f4ff;border-radius:6px;font-size:12px;">
-              <strong>AI Feedback:</strong> ${submission.aiFeedback}
-            </div>`;
+            btnHTML += '<div style="margin-top:8px;padding:8px;background:#f0f4ff;border-radius:6px;font-size:12px;"><strong>Feedback:</strong> ' + submission.aiFeedback + '</div>';
           }
         }
 
-        return `
-          <div class="card">
-            <div class="subject">${a.subject}</div>
-            <h3>${a.title}</h3>
-            <div class="description">${a.description}</div>
-            <div class="deadline ${isUrgent ? 'urgent' : ''}">
-              Deadline: ${deadline.toLocaleDateString()}
-              ${isPast ? ' (Expired)' : ''}
-              ${isUrgent ? ' (Due Soon!)' : ''}
-            </div>
-            ${badgeHTML}
-            <br>
-            ${btnHTML}
-          </div>`;
+        return '<div class="card">' +
+          '<div class="subject">' + a.subject + '</div>' +
+          '<h3>' + a.title + '</h3>' +
+          '<div class="description">' + a.description + '</div>' +
+          '<div class="deadline ' + (isUrgent ? 'urgent' : '') + '">Deadline: ' + deadline.toLocaleDateString() +
+            (isPast ? ' (Expired)' : '') + (isUrgent ? ' (Due Soon!)' : '') + '</div>' +
+          badgeHTML + '<br>' + btnHTML +
+          '</div>';
       }).join('');
     }
 
@@ -247,28 +233,71 @@
       if (!file) { alert('Please select a PDF file'); return; }
       if (file.size > 5 * 1024 * 1024) { alert('File too large. Max 5MB'); return; }
 
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.textContent = 'Submitting...';
+      submitBtn.disabled = true;
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('assignmentId', currentAssignmentId);
 
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${BACKEND}/api/submissions/submit`, {
+        const res = await fetch(BACKEND + '/api/submissions/submit', {
           method: 'POST',
           headers: { 'Authorization': token },
           body: formData
         });
         const data = await res.json();
         if (res.ok) {
-          alert(`Submitted! Status: ${data.status} | Similarity: ${data.similarityScore}%`);
           closeModal();
+          showFeedbackResult(data);
           loadAssignments();
         } else {
-          alert(data.message);
+          alert(data.message || 'Submission failed.');
         }
       } catch (err) {
         alert('Submission failed. Try again.');
+      } finally {
+        submitBtn.textContent = 'Submit';
+        submitBtn.disabled = false;
       }
+    }
+
+    function showFeedbackResult(data) {
+      const ratingColors = {
+        'Outstanding':     { badge: '#dcfce7', badgeText: '#166534', border: '#16a34a' },
+        'Excellent':       { badge: '#dbeafe', badgeText: '#1d4ed8', border: '#2563eb' },
+        'Good':            { badge: '#fef9c3', badgeText: '#854d0e', border: '#ca8a04' },
+        'Need to Improve': { badge: '#ffedd5', badgeText: '#9a3412', border: '#ea580c' }
+      };
+      const ratingIcons = {
+        'Outstanding': '🏆', 'Excellent': '⭐', 'Good': '👍', 'Need to Improve': '📝'
+      };
+      const rating = data.rating || 'Good';
+      const c = ratingColors[rating] || ratingColors['Good'];
+      const icon = ratingIcons[rating] || '👍';
+      const statusLabel = data.status === 'on-time'
+        ? '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold">On Time</span>'
+        : '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:bold">Late</span>';
+      const similarityColor = data.similarityScore > 50 ? '#dc2626' : '#16a34a';
+      const feedbackText = data.feedbackMessage || data.aiFeedback || 'Submission received!';
+
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:200;display:flex;justify-content:center;align-items:center;';
+      overlay.innerHTML =
+        '<div style="background:white;border-radius:16px;padding:35px;max-width:460px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.2);text-align:center;">' +
+          '<div style="font-size:56px;margin-bottom:10px">' + icon + '</div>' +
+          '<div style="background:' + c.badge + ';color:' + c.badgeText + ';display:inline-block;padding:6px 22px;border-radius:30px;font-size:16px;font-weight:bold;margin-bottom:14px;border:1px solid ' + c.border + '">' + rating + '</div>' +
+          '<h3 style="color:#1e293b;font-size:20px;margin-bottom:10px">Submission Received!</h3>' +
+          '<p style="color:#475569;font-size:14px;line-height:1.65;margin-bottom:22px">' + feedbackText + '</p>' +
+          '<div style="display:flex;justify-content:center;gap:40px;margin-bottom:26px;flex-wrap:wrap">' +
+            '<div style="text-align:center"><div style="font-size:26px;font-weight:bold;color:' + similarityColor + '">' + data.similarityScore + '%</div><div style="font-size:12px;color:#64748b;margin-top:2px">Similarity Score</div></div>' +
+            '<div style="text-align:center">' + statusLabel + '<div style="font-size:12px;color:#64748b;margin-top:6px">Submission Status</div></div>' +
+          '</div>' +
+          '<button onclick="this.parentElement.parentElement.remove()" style="background:#2563eb;color:white;border:none;padding:12px 30px;border-radius:8px;font-size:15px;cursor:pointer;width:100%;font-weight:bold;">Close</button>' +
+        '</div>';
+      document.body.appendChild(overlay);
     }
 
     function logout() {
@@ -276,20 +305,19 @@
       window.location.href = 'login.html';
     }
 
-    // DEADLINE NOTIFICATIONS
     function checkDeadlines(assignments) {
       assignments.forEach(assignment => {
         const deadline = new Date(assignment.deadline);
         const now = new Date();
         const hoursLeft = (deadline - now) / (1000 * 60 * 60);
         if (hoursLeft > 0 && hoursLeft <= 24) {
-          showAlert(`Deadline Tomorrow! "${assignment.title}" is due in ${Math.round(hoursLeft)} hours!`, 'warning');
+          showAlert('Deadline Tomorrow! "' + assignment.title + '" is due in ' + Math.round(hoursLeft) + ' hours!', 'warning');
         }
         if (hoursLeft > 0 && hoursLeft <= 1) {
-          showAlert(`URGENT! "${assignment.title}" is due in less than 1 hour!`, 'urgent');
+          showAlert('URGENT! "' + assignment.title + '" is due in less than 1 hour!', 'urgent');
         }
         if (hoursLeft < 0 && hoursLeft > -1) {
-          showAlert(`Deadline passed for "${assignment.title}"!`, 'danger');
+          showAlert('Deadline passed for "' + assignment.title + '"!', 'danger');
         }
       });
     }
@@ -305,22 +333,10 @@
         danger:  { bg: '#fee2e2', border: '#dc2626', text: '#991b1b' }
       };
       const c = colors[type];
-      box.style.cssText = `
-        position: fixed; top: 20px; right: 20px;
-        background: ${c.bg}; border-left: 4px solid ${c.border};
-        color: ${c.text}; padding: 15px 20px; border-radius: 10px;
-        font-family: Arial, sans-serif; font-size: 14px;
-        max-width: 320px; z-index: 9999;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-      `;
-      box.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
-          <span>${message}</span>
-          <span onclick="this.parentElement.parentElement.remove()"
-            style="cursor:pointer;font-size:20px;line-height:1">×</span>
-        </div>`;
+      box.style.cssText = 'position:fixed;top:20px;right:20px;background:' + c.bg + ';border-left:4px solid ' + c.border + ';color:' + c.text + ';padding:15px 20px;border-radius:10px;font-family:Arial,sans-serif;font-size:14px;max-width:320px;z-index:9999;box-shadow:0 4px 15px rgba(0,0,0,0.15);';
+      box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px"><span>' + message + '</span><span onclick="this.parentElement.parentElement.remove()" style="cursor:pointer;font-size:20px;line-height:1">×</span></div>';
       document.body.appendChild(box);
-      setTimeout(() => { if (box.parentElement) box.remove(); }, 6000);
+      setTimeout(function() { if (box.parentElement) box.remove(); }, 6000);
     }
 
     loadAssignments();
