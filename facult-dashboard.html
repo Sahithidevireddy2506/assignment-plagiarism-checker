@@ -355,6 +355,59 @@
     }
 
     loadAssignments();
+    function checkDeadlinesFaculty(assignments) {
+  assignments.forEach(assignment => {
+    const deadline = new Date(assignment.deadline);
+    const now = new Date();
+    const hoursLeft = (deadline - now) / (1000 * 60 * 60);
+
+    if (hoursLeft > 0 && hoursLeft <= 24) {
+      showFacultyAlert(
+        `Reminder: "${assignment.title}" deadline is in ${Math.round(hoursLeft)} hours!`,
+        'warning'
+      );
+    }
+    if (hoursLeft < 0 && hoursLeft > -2) {
+      showFacultyAlert(
+        `"${assignment.title}" deadline has passed. No more submissions!`,
+        'danger'
+      );
+    }
+  });
+}
+
+function showFacultyAlert(message, type) {
+  const box = document.createElement('div');
+  const colors = {
+    warning: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
+    danger:  { bg: '#fee2e2', border: '#dc2626', text: '#991b1b' }
+  };
+  const c = colors[type];
+  box.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: ${c.bg};
+    border-left: 4px solid ${c.border};
+    color: ${c.text};
+    padding: 15px 20px;
+    border-radius: 10px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    max-width: 320px;
+    z-index: 9999;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+  `;
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+      <span>${message}</span>
+      <span onclick="this.parentElement.parentElement.remove()"
+        style="cursor:pointer;font-size:20px;line-height:1">×</span>
+    </div>
+  `;
+  document.body.appendChild(box);
+  setTimeout(() => { if (box.parentElement) box.remove(); }, 6000);
+}
   </script>
 </body>
 </html>
