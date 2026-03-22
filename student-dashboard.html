@@ -16,8 +16,6 @@
       color: white;
     }
     .navbar h1 { font-size: 24px; }
-    .navbar .user-info { display: flex; align-items: center; gap: 15px; }
-    .navbar span { font-size: 14px; }
     .logout-btn {
       background: white;
       color: #2563eb;
@@ -47,7 +45,11 @@
       font-weight: bold;
       margin-bottom: 8px;
     }
-    .card .description { color: #666; font-size: 13px; margin-bottom: 12px; }
+    .card .description {
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
     .card .deadline {
       font-size: 13px;
       color: #666;
@@ -80,14 +82,6 @@
       background: #9ca3af;
       cursor: not-allowed;
     }
-    .similarity {
-      margin-top: 10px;
-      font-size: 13px;
-      padding: 8px;
-      border-radius: 6px;
-    }
-    .similarity.high { background: #fee2e2; color: #991b1b; }
-    .similarity.low { background: #dcfce7; color: #166534; }
     .modal-overlay {
       display: none;
       position: fixed;
@@ -124,14 +118,13 @@
     }
     .btn-submit { background: #2563eb; color: white; }
     .btn-cancel { background: #f3f4f6; color: #333; }
-    .loading { text-align: center; color: #666; padding: 40px; }
   </style>
 </head>
 <body>
   <div class="navbar">
     <h1>EduCheck</h1>
-    <div class="user-info">
-      <span>Welcome, <strong id="studentName"></strong></span>
+    <div style="display:flex;align-items:center;gap:15px">
+      <span style="font-size:14px">Welcome, <strong id="studentName"></strong></span>
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
   </div>
@@ -139,16 +132,19 @@
   <div class="content">
     <h2>My Assignments</h2>
     <div class="assignments-grid" id="assignmentsList">
-      <div class="loading">Loading assignments...</div>
+      <p style="color:#666">Loading assignments...</p>
     </div>
   </div>
 
   <div class="modal-overlay" id="submitModal">
     <div class="modal">
       <h3>Submit Assignment</h3>
-      <p id="modalAssignmentTitle" style="color:#666;margin-bottom:15px;font-size:14px;"></p>
+      <p id="modalAssignmentTitle"
+        style="color:#666;margin-bottom:15px;font-size:14px;"></p>
       <input type="file" id="fileInput" accept=".pdf">
-      <p style="font-size:12px;color:#999;margin-bottom:15px;">Only PDF files accepted. Max 5MB.</p>
+      <p style="font-size:12px;color:#999;margin-bottom:15px;">
+        Only PDF files. Max 5MB.
+      </p>
       <div class="modal-buttons">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
         <button class="btn-submit" onclick="submitAssignment()">Submit</button>
@@ -161,22 +157,17 @@
     let currentAssignmentId = null;
     let mySubmissions = [];
 
-    document.getElementById('studentName').textContent = localStorage.getItem('name');
+    document.getElementById('studentName').textContent =
+      localStorage.getItem('name');
 
     async function loadAssignments() {
       try {
         const token = localStorage.getItem('token');
-        const [assignRes, subRes] = await Promise.all([
-          fetch(`${BACKEND}/api/assignments/all`, {
-            headers: { 'Authorization': token }
-          }),
-          fetch(`${BACKEND}/api/submissions/mystudent`, {
-            headers: { 'Authorization': token }
-          })
-        ]);
-
-        const assignments = await assignRes.json();
-        mySubmissions = await subRes.json();
+        const res = await fetch(`${BACKEND}/api/assignments/all`, {
+          headers: { 'Authorization': token }
+        });
+        const assignments = await res.json();
+        mySubmissions = [];
         renderAssignments(assignments);
       } catch (err) {
         document.getElementById('assignmentsList').innerHTML =
@@ -185,12 +176,12 @@
     }
 
     function renderAssignments(assignments) {
+      checkDeadlines(assignments);
       const container = document.getElementById('assignmentsList');
       if (!assignments.length) {
         container.innerHTML = '<p style="color:#666">No assignments yet.</p>';
         return;
       }
-
       container.innerHTML = assignments.map(a => {
         const deadline = new Date(a.deadline);
         const now = new Date();
@@ -199,18 +190,27 @@
         const submission = mySubmissions.find(s => s.assignment === a._id);
 
         let badgeHTML = '<span class="badge pending">Pending</span>';
-        let btnHTML = `<button class="submit-btn" onclick="openModal('${a._id}', '${a.title}')">Submit Assignment</button>`;
+        let btnHTML = `<button class="submit-btn"
+          onclick="openModal('${a._id}', '${a.title}')">
+          Submit Assignment
+        </button>`;
 
         if (submission) {
-          badgeHTML = `<span class="badge ${submission.status}">${submission.status === 'on-time' ? 'Submitted On Time' : 'Submitted Late'}</span>`;
+          badgeHTML = `<span class="badge ${submission.status}">
+            ${submission.status === 'on-time' ? 'Submitted On Time' : 'Late'}
+          </span>`;
           btnHTML = '<button class="submit-btn" disabled>Already Submitted</button>';
-
           if (submission.similarityScore > 0) {
-            const scoreClass = submission.similarityScore > 50 ? 'high' : 'low';
-            btnHTML += `<div class="similarity ${scoreClass}">Similarity Score: ${submission.similarityScore}%</div>`;
+            const sc = submission.similarityScore > 50 ? 'color:#dc2626' : 'color:#16a34a';
+            btnHTML += `<p style="font-size:13px;margin-top:8px;${sc}">
+              Similarity: ${submission.similarityScore}%
+            </p>`;
           }
           if (submission.aiFeedback) {
-            btnHTML += `<div style="margin-top:10px;padding:8px;background:#f0f4ff;border-radius:6px;font-size:12px;color:#333"><strong>AI Feedback:</strong> ${submission.aiFeedback}</div>`;
+            btnHTML += `<div style="margin-top:8px;padding:8px;
+              background:#f0f4ff;border-radius:6px;font-size:12px;">
+              <strong>AI Feedback:</strong> ${submission.aiFeedback}
+            </div>`;
           }
         }
 
@@ -220,11 +220,12 @@
             <h3>${a.title}</h3>
             <div class="description">${a.description}</div>
             <div class="deadline ${isUrgent ? 'urgent' : ''}">
-              Deadline: ${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString()}
+              Deadline: ${deadline.toLocaleDateString()}
               ${isPast ? ' (Expired)' : ''}
               ${isUrgent ? ' (Due Soon!)' : ''}
             </div>
             ${badgeHTML}
+            <br>
             ${btnHTML}
           </div>`;
       }).join('');
@@ -252,14 +253,13 @@
 
       try {
         const token = localStorage.getItem('token');
-        const response = await fetch(`${BACKEND}/api/submissions/submit`, {
+        const res = await fetch(`${BACKEND}/api/submissions/submit`, {
           method: 'POST',
           headers: { 'Authorization': token },
           body: formData
         });
-
-        const data = await response.json();
-        if (response.ok) {
+        const data = await res.json();
+        if (res.ok) {
           alert(`Submitted! Status: ${data.status} | Similarity: ${data.similarityScore}%`);
           closeModal();
           loadAssignments();
@@ -274,6 +274,53 @@
     function logout() {
       localStorage.clear();
       window.location.href = 'login.html';
+    }
+
+    // DEADLINE NOTIFICATIONS
+    function checkDeadlines(assignments) {
+      assignments.forEach(assignment => {
+        const deadline = new Date(assignment.deadline);
+        const now = new Date();
+        const hoursLeft = (deadline - now) / (1000 * 60 * 60);
+        if (hoursLeft > 0 && hoursLeft <= 24) {
+          showAlert(`Deadline Tomorrow! "${assignment.title}" is due in ${Math.round(hoursLeft)} hours!`, 'warning');
+        }
+        if (hoursLeft > 0 && hoursLeft <= 1) {
+          showAlert(`URGENT! "${assignment.title}" is due in less than 1 hour!`, 'urgent');
+        }
+        if (hoursLeft < 0 && hoursLeft > -1) {
+          showAlert(`Deadline passed for "${assignment.title}"!`, 'danger');
+        }
+      });
+    }
+
+    function showAlert(message, type) {
+      const existing = document.getElementById('notif-box');
+      if (existing) existing.remove();
+      const box = document.createElement('div');
+      box.id = 'notif-box';
+      const colors = {
+        warning: { bg: '#fef9c3', border: '#eab308', text: '#854d0e' },
+        urgent:  { bg: '#fee2e2', border: '#dc2626', text: '#991b1b' },
+        danger:  { bg: '#fee2e2', border: '#dc2626', text: '#991b1b' }
+      };
+      const c = colors[type];
+      box.style.cssText = `
+        position: fixed; top: 20px; right: 20px;
+        background: ${c.bg}; border-left: 4px solid ${c.border};
+        color: ${c.text}; padding: 15px 20px; border-radius: 10px;
+        font-family: Arial, sans-serif; font-size: 14px;
+        max-width: 320px; z-index: 9999;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+      `;
+      box.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+          <span>${message}</span>
+          <span onclick="this.parentElement.parentElement.remove()"
+            style="cursor:pointer;font-size:20px;line-height:1">×</span>
+        </div>`;
+      document.body.appendChild(box);
+      setTimeout(() => { if (box.parentElement) box.remove(); }, 6000);
     }
 
     loadAssignments();
