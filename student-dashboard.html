@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduCheck - Student Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #f0f4ff; }
+    .navbar {
+      background: #2563eb;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: white;
+    }
+    .navbar h1 { font-size: 24px; }
+    .navbar .user-info { display: flex; align-items: center; gap: 15px; }
+    .navbar span { font-size: 14px; }
+    .logout-btn {
+      background: white;
+      color: #2563eb;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .content { padding: 30px; max-width: 1000px; margin: 0 auto; }
+    h2 { color: #333; margin-bottom: 20px; font-size: 22px; }
+    .assignments-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .card h3 { color: #333; margin-bottom: 8px; }
+    .card .subject {
+      color: #2563eb;
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .card .description { color: #666; font-size: 13px; margin-bottom: 12px; }
+    .card .deadline {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 15px;
+    }
+    .deadline.urgent { color: #dc2626; font-weight: bold; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+    .badge.pending { background: #fef9c3; color: #854d0e; }
+    .badge.submitted { background: #dcfce7; color: #166534; }
+    .badge.late { background: #fee2e2; color: #991b1b; }
+    .submit-btn {
+      width: 100%;
+      padding: 10px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .submit-btn:hover { background: #1d4ed8; }
+    .submit-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .similarity {
+      margin-top: 10px;
+      font-size: 13px;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .similarity.high { background: #fee2e2; color: #991b1b; }
+    .similarity.low { background: #dcfce7; color: #166534; }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+    .modal {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 450px;
+    }
+    .modal h3 { margin-bottom: 20px; color: #333; }
+    .modal input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border: 2px dashed #ddd;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    .modal-buttons { display: flex; gap: 10px; }
+    .modal-buttons button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-submit { background: #2563eb; color: white; }
+    .btn-cancel { background: #f3f4f6; color: #333; }
+    .loading { text-align: center; color: #666; padding: 40px; }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <h1>EduCheck</h1>
+    <div class="user-info">
+      <span>Welcome, <strong id="studentName"></strong></span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <h2>My Assignments</h2>
+    <div class="assignments-grid" id="assignmentsList">
+      <div class="loading">Loading assignments...</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="submitModal">
+    <div class="modal">
+      <h3>Submit Assignment</h3>
+      <p id="modalAssignmentTitle" style="color:#666;margin-bottom:15px;font-size:14px;"></p>
+      <input type="file" id="fileInput" accept=".pdf">
+      <p style="font-size:12px;color:#999;margin-bottom:15px;">Only PDF files accepted. Max 5MB.</p>
+      <div class="modal-buttons">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-submit" onclick="submitAssignment()">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BACKEND = 'https://educheck-backend.yourname.repl.co';
+    let currentAssignmentId = null;
+    let mySubmissions = [];
+
+    document.getElementById('studentName').textContent = localStorage.getItem('name');
+
+    async function loadAssignments() {
+      try {
+        const token = localStorage.getItem('token');
+        const [assignRes, subRes] = await Promise.all([
+          fetch(`${BACKEND}/api/assignments/all`, {
+            headers: { 'Authorization': token }
+          }),
+          fetch(`${BACKEND}/api/submissions/mystudent`, {
+            headers: { 'Authorization': token }
+          })
+        ]);
+
+        const assignments = await assignRes.json();
+        mySubmissions = await subRes.json();
+        renderAssignments(assignments);
+      } catch (err) {
+        document.getElementById('assignmentsList').innerHTML =
+          '<p style="color:red">Failed to load. Check your connection.</p>';
+      }
+    }
+
+    function renderAssignments(assignments) {
+      const container = document.getElementById('assignmentsList');
+      if (!assignments.length) {
+        container.innerHTML = '<p style="color:#666">No assignments yet.</p>';
+        return;
+      }
+
+      container.innerHTML = assignments.map(a => {
+        const deadline = new Date(a.deadline);
+        const now = new Date();
+        const isUrgent = (deadline - now) < 86400000 && deadline > now;
+        const isPast = deadline < now;
+        const submission = mySubmissions.find(s => s.assignment === a._id);
+
+        let badgeHTML = '<span class="badge pending">Pending</span>';
+        let btnHTML = `<button class="submit-btn" onclick="openModal('${a._id}', '${a.title}')">Submit Assignment</button>`;
+
+        if (submission) {
+          badgeHTML = `<span class="badge ${submission.status}">${submission.status === 'on-time' ? 'Submitted On Time' : 'Submitted Late'}</span>`;
+          btnHTML = '<button class="submit-btn" disabled>Already Submitted</button>';
+
+          if (submission.similarityScore > 0) {
+            const scoreClass = submission.similarityScore > 50 ? 'high' : 'low';
+            btnHTML += `<div class="similarity ${scoreClass}">Similarity Score: ${submission.similarityScore}%</div>`;
+          }
+          if (submission.aiFeedback) {
+            btnHTML += `<div style="margin-top:10px;padding:8px;background:#f0f4ff;border-radius:6px;font-size:12px;color:#333"><strong>AI Feedback:</strong> ${submission.aiFeedback}</div>`;
+          }
+        }
+
+        return `
+          <div class="card">
+            <div class="subject">${a.subject}</div>
+            <h3>${a.title}</h3>
+            <div class="description">${a.description}</div>
+            <div class="deadline ${isUrgent ? 'urgent' : ''}">
+              Deadline: ${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString()}
+              ${isPast ? ' (Expired)' : ''}
+              ${isUrgent ? ' (Due Soon!)' : ''}
+            </div>
+            ${badgeHTML}
+            ${btnHTML}
+          </div>`;
+      }).join('');
+    }
+
+    function openModal(assignmentId, title) {
+      currentAssignmentId = assignmentId;
+      document.getElementById('modalAssignmentTitle').textContent = title;
+      document.getElementById('submitModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+      document.getElementById('submitModal').style.display = 'none';
+      document.getElementById('fileInput').value = '';
+    }
+
+    async function submitAssignment() {
+      const file = document.getElementById('fileInput').files[0];
+      if (!file) { alert('Please select a PDF file'); return; }
+      if (file.size > 5 * 1024 * 1024) { alert('File too large. Max 5MB'); return; }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('assignmentId', currentAssignmentId);
+
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${BACKEND}/api/submissions/submit`, {
+          method: 'POST',
+          headers: { 'Authorization': token },
+          body: formData
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          alert(`Submitted! Status: ${data.status} | Similarity: ${data.similarityScore}%`);
+          closeModal();
+          loadAssignments();
+        } else {
+          alert(data.message);
+        }
+      } catch (err) {
+        alert('Submission failed. Try again.');
+      }
+    }
+
+    function logout() {
+      localStorage.clear();
+      window.location.href = 'login.html';
+    }
+
+    loadAssignments();
+  </script>
+</body>
+</html>
